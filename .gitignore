@@ -10,6 +10,16 @@ gensrc/
 docs/pyle.log
 docs/pyle.pid
 docs/api-guide.pdf
+.DS_Store
+TestResults.xml
+TestResult.xml
+/packages
+/.fake
+.paket/paket.exe
+/NuGet
+rabbit-mock.snk
+test.sh
+*.VisualState.xml
 
 #################
 ## Visual Studio
@@ -93,7 +103,6 @@ projects/client/Unit*/TestResult.xml
 
 # Development scripts
 
-*.fsx
 *.pcap
 
 # Vim
