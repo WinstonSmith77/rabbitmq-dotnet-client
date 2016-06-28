@@ -35,7 +35,7 @@
 //  The Original Code is RabbitMQ.
 //
 //  The Initial Developer of the Original Code is Pivotal Software, Inc.
-//  Copyright (c) 2013-2015 Pivotal Software, Inc.  All rights reserved.
+//  Copyright (c) 2013-2016 Pivotal Software, Inc.  All rights reserved.
 //---------------------------------------------------------------------------
 
 using System;
@@ -44,7 +44,6 @@ using System.Collections.Generic;
 
 namespace RabbitMQ.Util
 {
-    [Serializable]
     internal class SynchronizedList<T> : IList<T>
     {
         private readonly IList<T> list;

@@ -39,7 +39,6 @@
 //---------------------------------------------------------------------------
 
 using NUnit.Framework;
-using RabbitMQ.Client.Impl;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -52,7 +51,7 @@ namespace RabbitMQ.Client.Unit
     {
         private const UInt16 heartbeatTimeout = 2;
 
-        [Test, Category("LongRunning"), Timeout(35000)]
+        [Test, Category("LongRunning"), MaxTimeAttribute(35000)]
         public void TestThatHeartbeatWriterUsesConfigurableInterval()
         {
             var cf = new ConnectionFactory()
@@ -95,7 +94,7 @@ namespace RabbitMQ.Client.Unit
             RunSingleConnectionTest(cf);
         }
 
-        [Test, Category("LongRunning"), Timeout(65000)]
+        [Test, Category("LongRunning"), MaxTimeAttribute(90000)]
         public void TestHundredsOfConnectionsWithRandomHeartbeatInterval()
         {
             var rnd = new Random();
@@ -107,7 +106,6 @@ namespace RabbitMQ.Client.Unit
                 var conn = cf.CreateConnection();
                 xs.Add(conn);
                 var ch = conn.CreateModel();
-                bool wasShutdown = false;
 
                 conn.ConnectionShutdown += (sender, evt) =>
                     {

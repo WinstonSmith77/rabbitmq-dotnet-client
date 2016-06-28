@@ -47,13 +47,36 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 
-#pragma warning disable 0168
+#pragma warning disable 0618
 
 namespace RabbitMQ.Client.Unit
 {
+    class DisposableConnection : IDisposable
+    {
+        public DisposableConnection(AutorecoveringConnection c)
+        {
+            this.Connection = c;
+        }
+
+        public AutorecoveringConnection Connection {get; private set;}
+
+        public void Dispose()
+        {
+            this.Connection.Close();
+        }
+    }
     [TestFixture]
     public class TestConnectionRecovery : IntegrationFixture
     {
+        private DisposableConnection CreateWrappedAutorecoveringConnection()
+        {
+            return new DisposableConnection(CreateAutorecoveringConnection());
+        }
+        private DisposableConnection CreateWrappedAutorecoveringConnection(IList<string> hostnames)
+        {
+            return new DisposableConnection(CreateAutorecoveringConnection(hostnames));
+        }
+
         [SetUp]
         public override void Init()
         {
@@ -65,9 +88,28 @@ namespace RabbitMQ.Client.Unit
         public void TestBasicAckAfterChannelRecovery()
         {
             var latch = new ManualResetEvent(false);
-            var cons = new AckingBasicConsumer(Model, latch, () => { CloseAndWaitForRecovery(); });
+            var cons = new AckingBasicConsumer(Model, latch, CloseAndWaitForRecovery);
 
             TestDelayedBasicAckNackAfterChannelRecovery(cons, latch);
+        }
+
+        [Test]
+        public void TestBasicAckAfterBasicGetAndChannelRecovery()
+        {
+            var q = GenerateQueueName();
+            Model.QueueDeclare(q, false, false, false, null);
+            // create an offset
+            var bp = Model.CreateBasicProperties();
+            Model.BasicPublish("", q, bp, new byte [] {});
+            Thread.Sleep(50);
+            var g = Model.BasicGet(q, false);
+            CloseAndWaitForRecovery();
+            Assert.IsTrue(Conn.IsOpen);
+            Assert.IsTrue(Model.IsOpen);
+            // ack the message after recovery - this should be out of range and ignored
+            Model.BasicAck(g.DeliveryTag, false);
+            // do a sync operation to 'check' there is no channel exception 
+            Model.BasicGet(q, false);
         }
 
         [Test]
@@ -97,21 +139,56 @@ namespace RabbitMQ.Client.Unit
         [Test]
         public void TestBasicConnectionRecoveryWithHostnameList()
         {
-            var c = CreateAutorecoveringConnection(new List<string>() { "127.0.0.1", "localhost" });
-            Assert.IsTrue(c.IsOpen);
-            CloseAndWaitForRecovery(c);
-            Assert.IsTrue(c.IsOpen);
-            c.Close();
+            using(var c = CreateAutorecoveringConnection(new List<string> { "127.0.0.1", "localhost" }))
+            {
+                Assert.IsTrue(c.IsOpen);
+                CloseAndWaitForRecovery(c);
+                Assert.IsTrue(c.IsOpen);
+            }
         }
 
         [Test]
         public void TestBasicConnectionRecoveryWithHostnameListAndUnreachableHosts()
         {
-            var c = CreateAutorecoveringConnection(new List<string>() { "191.72.44.22", "127.0.0.1", "localhost" });
-            Assert.IsTrue(c.IsOpen);
-            CloseAndWaitForRecovery(c);
-            Assert.IsTrue(c.IsOpen);
-            c.Close();
+            using(var c = CreateAutorecoveringConnection(new List<string> { "191.72.44.22", "127.0.0.1", "localhost" }))
+            {        
+                Assert.IsTrue(c.IsOpen);
+                CloseAndWaitForRecovery(c);
+                Assert.IsTrue(c.IsOpen);
+            }
+        }
+
+        [Test]
+        public void TestBasicConnectionRecoveryWithEndpointList()
+        {
+            using(var c = CreateAutorecoveringConnection(
+                        new List<AmqpTcpEndpoint> 
+                        { 
+                            new AmqpTcpEndpoint("127.0.0.1"), 
+                            new AmqpTcpEndpoint("localhost") 
+                        }))
+                        {
+                            Assert.IsTrue(c.IsOpen);
+                            CloseAndWaitForRecovery(c);
+                            Assert.IsTrue(c.IsOpen);
+                        }
+        }
+
+        [Test]
+        public void TestBasicConnectionRecoveryWithEndpointListAndUnreachableHosts()
+        {
+            using(var c = CreateAutorecoveringConnection(
+                        new List<AmqpTcpEndpoint> 
+                        { 
+                            new AmqpTcpEndpoint("191.72.44.22"), 
+                            new AmqpTcpEndpoint("127.0.0.1"), 
+                            new AmqpTcpEndpoint("localhost") 
+                        }))
+                        {
+                            Assert.IsTrue(c.IsOpen);
+                            CloseAndWaitForRecovery(c);
+                            Assert.IsTrue(c.IsOpen);
+                        }
         }
 
         [Test]
@@ -142,7 +219,7 @@ namespace RabbitMQ.Client.Unit
         public void TestBasicNackAfterChannelRecovery()
         {
             var latch = new ManualResetEvent(false);
-            var cons = new NackingBasicConsumer(Model, latch, () => { CloseAndWaitForRecovery(); });
+            var cons = new NackingBasicConsumer(Model, latch, CloseAndWaitForRecovery);
 
             TestDelayedBasicAckNackAfterChannelRecovery(cons, latch);
         }
@@ -151,7 +228,7 @@ namespace RabbitMQ.Client.Unit
         public void TestBasicRejectAfterChannelRecovery()
         {
             var latch = new ManualResetEvent(false);
-            var cons = new RejectingBasicConsumer(Model, latch, () => { CloseAndWaitForRecovery(); });
+            var cons = new RejectingBasicConsumer(Model, latch, CloseAndWaitForRecovery);
 
             TestDelayedBasicAckNackAfterChannelRecovery(cons, latch);
         }
@@ -208,55 +285,59 @@ namespace RabbitMQ.Client.Unit
         [Test]
         public void TestConsumerWorkServiceRecovery()
         {
-            AutorecoveringConnection c = CreateAutorecoveringConnection();
-            IModel m = c.CreateModel();
-            string q = m.QueueDeclare("dotnet-client.recovery.consumer_work_pool1",
-                false, false, false, null).QueueName;
-            var cons = new EventingBasicConsumer(m);
-            m.BasicConsume(q, true, cons);
-            AssertConsumerCount(m, q, 1);
+            using(var c = CreateAutorecoveringConnection())
+            {
+                IModel m = c.CreateModel();
+                string q = m.QueueDeclare("dotnet-client.recovery.consumer_work_pool1",
+                    false, false, false, null).QueueName;
+                var cons = new EventingBasicConsumer(m);
+                m.BasicConsume(q, true, cons);
+                AssertConsumerCount(m, q, 1);
 
-            CloseAndWaitForRecovery();
+                CloseAndWaitForRecovery(c);
 
-            Assert.IsTrue(m.IsOpen);
-            var latch = new ManualResetEvent(false);
-            cons.Received += (s, args) => latch.Set();
+                Assert.IsTrue(m.IsOpen);
+                var latch = new ManualResetEvent(false);
+                cons.Received += (s, args) => latch.Set();
 
-            m.BasicPublish("", q, null, encoding.GetBytes("msg"));
-            Wait(latch);
+                m.BasicPublish("", q, null, encoding.GetBytes("msg"));
+                Wait(latch);
 
-            m.QueueDelete(q);
+                m.QueueDelete(q);
+            }
         }
 
         [Test]
         public void TestConsumerRecoveryOnClientNamedQueueWithOneRecovery()
         {
-            AutorecoveringConnection c = CreateAutorecoveringConnection();
-            IModel m = c.CreateModel();
-            string q = m.QueueDeclare("dotnet-client.recovery.queue1",
-                false, false, false, null).QueueName;
-            var cons = new EventingBasicConsumer(m);
-            m.BasicConsume(q, true, cons);
-            AssertConsumerCount(m, q, 1);
+            using (var c = CreateAutorecoveringConnection())
+            {
+                IModel m = c.CreateModel();
+                string q = m.QueueDeclare("dotnet-client.recovery.queue1",
+                    false, false, false, null).QueueName;
+                var cons = new EventingBasicConsumer(m);
+                m.BasicConsume(q, true, cons);
+                AssertConsumerCount(m, q, 1);
 
-            string latestName = null;
+                string latestName = null;
 
-            c.QueueNameChangeAfterRecovery += (source, ea) => { latestName = ea.NameAfter; };
+                c.QueueNameChangeAfterRecovery += (source, ea) => { latestName = ea.NameAfter; };
 
-            CloseAndWaitForRecovery(c);
-            AssertConsumerCount(m, latestName, 1);
-            CloseAndWaitForRecovery(c);
-            AssertConsumerCount(m, latestName, 1);
-            CloseAndWaitForRecovery(c);
-            AssertConsumerCount(m, latestName, 1);
+                CloseAndWaitForRecovery(c);
+                AssertConsumerCount(m, latestName, 1);
+                CloseAndWaitForRecovery(c);
+                AssertConsumerCount(m, latestName, 1);
+                CloseAndWaitForRecovery(c);
+                AssertConsumerCount(m, latestName, 1);
 
-            var latch = new ManualResetEvent(false);
-            cons.Received += (s, args) => latch.Set();
+                var latch = new ManualResetEvent(false);
+                cons.Received += (s, args) => latch.Set();
 
-            m.BasicPublish("", q, null, encoding.GetBytes("msg"));
-            Wait(latch);
+                m.BasicPublish("", q, null, encoding.GetBytes("msg"));
+                Wait(latch);
 
-            m.QueueDelete(q);
+                m.QueueDelete(q);
+            }
         }
 
         [Test]
@@ -294,7 +375,7 @@ namespace RabbitMQ.Client.Unit
                 c.CreateModel();
                 Assert.Fail("Expected an exception");
             }
-            catch (AlreadyClosedException ace)
+            catch (AlreadyClosedException)
             {
                 // expected
             }
@@ -571,7 +652,7 @@ namespace RabbitMQ.Client.Unit
                 ch.QueueDeclarePassive(s);
                 Assert.Fail("Expected an exception");
             }
-            catch (OperationInterruptedException e)
+            catch (OperationInterruptedException)
             {
                 // expected
             }

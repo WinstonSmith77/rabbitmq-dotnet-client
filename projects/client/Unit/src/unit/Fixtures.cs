@@ -126,6 +126,17 @@ namespace RabbitMQ.Client.Unit
             return (AutorecoveringConnection)cf.CreateConnection(hostnames);
         }
 
+        protected AutorecoveringConnection CreateAutorecoveringConnection(IList<AmqpTcpEndpoint> endpoints)
+        {
+            var cf = new ConnectionFactory();
+            cf.AutomaticRecoveryEnabled = true;
+            // tests that use this helper will likely list unreachable hosts,
+            // make sure we time out quickly on those
+            cf.RequestedConnectionTimeout = 1000;
+            cf.NetworkRecoveryInterval = RECOVERY_INTERVAL;
+            return (AutorecoveringConnection)cf.CreateConnection(endpoints);
+        }
+
         protected AutorecoveringConnection CreateAutorecoveringConnectionWithTopologyRecoveryDisabled()
         {
             var cf = new ConnectionFactory();
@@ -400,13 +411,13 @@ namespace RabbitMQ.Client.Unit
             {
                 rabbitmqctlPath = envVariable;
             }
-            else if (IsRunningOnMono())
+            else if (IsRunningOnMonoOrDotNetCore())
             {
-                rabbitmqctlPath = "../../../../../../rabbit/scripts/rabbitmqctl";
+                rabbitmqctlPath = "../../../../rabbit/scripts/rabbitmqctl";
             }
             else
             {
-                rabbitmqctlPath = @"..\..\..\..\..\..\rabbit\scripts\rabbitmqctl.bat";
+                rabbitmqctlPath = @"..\..\..\..\rabbit\scripts\rabbitmqctl.bat";
             }
 
             return ExecCommand(rabbitmqctlPath, args);
@@ -438,7 +449,7 @@ namespace RabbitMQ.Client.Unit
             }
 
             string cmd;
-            if(IsRunningOnMono()) {
+            if(IsRunningOnMonoOrDotNetCore()) {
                 cmd  = ctl;
             } else {
                 cmd  = "cmd.exe";
@@ -474,9 +485,13 @@ namespace RabbitMQ.Client.Unit
             Console.WriteLine("Failure while running " + cmd + " " + args + ":\n" + msg);
         }
 
-        public static bool IsRunningOnMono()
+        public static bool IsRunningOnMonoOrDotNetCore()
         {
+            #if CORECLR
+            return true;
+            #else
             return Type.GetType("Mono.Runtime") != null;
+            #endif
         }
 
         //
@@ -487,7 +502,7 @@ namespace RabbitMQ.Client.Unit
         {
             ExecRabbitMQCtl("set_vm_memory_high_watermark 0.000000001");
             // give rabbitmqctl some time to do its job
-            Thread.Sleep(800);
+            Thread.Sleep(1200);
             Publish(Conn);
         }
 
@@ -549,7 +564,7 @@ namespace RabbitMQ.Client.Unit
                     return new ConnectionInfo(columns[0], Convert.ToUInt32(columns[1].Trim()));
                 }).ToList();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 Console.WriteLine("Bad response from rabbitmqctl list_connections -q pid peer_port:" + Environment.NewLine + stdout);
                 throw;

@@ -49,7 +49,9 @@ namespace RabbitMQ.Client.Unit
     [TestFixture]
     public class TestConnectionChurnHandleLeak : IntegrationFixture
     {
-        [Test]
+        //TODO: work out if these tests can be replicated
+        /*
+        [Test, Category("GCTest"), Category("MonoBug")]
         public void TestHandleLeakWithDisabledHeartbeats()
         {
             var cf = new ConnectionFactory()
@@ -59,7 +61,7 @@ namespace RabbitMQ.Client.Unit
             PerformLeakTest(cf);
         }
 
-        [Test]
+        [Test, Category("GCTest"), Category("MonoBug")]
         public void TestHandleLeakWithEnabledHeartbeats()
         {
             var cf = new ConnectionFactory()
@@ -68,6 +70,7 @@ namespace RabbitMQ.Client.Unit
             };
             PerformLeakTest(cf);
         }
+
 
         protected void PerformLeakTest(ConnectionFactory cf)
         {
@@ -81,12 +84,14 @@ namespace RabbitMQ.Client.Unit
             }
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            Thread.Sleep(TimeSpan.FromSeconds(10));
+            GC.Collect();
+            Thread.Sleep(TimeSpan.FromSeconds(1));
             me = Process.GetCurrentProcess();
             Console.WriteLine("{0} handles after the test...", me.HandleCount);
             // allow for a 20% margin of error, as GC behaviour and native handle
             // release is difficult to predict
             Assert.That(me.HandleCount, Is.LessThanOrEqualTo(n + 200));
         }
+        */
     }
 }

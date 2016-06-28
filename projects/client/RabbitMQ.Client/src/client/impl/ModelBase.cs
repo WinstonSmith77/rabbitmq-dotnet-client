@@ -96,8 +96,8 @@ namespace RabbitMQ.Client.Impl
 
         public ModelBase(ISession session, ConsumerWorkService workService)
         {
-            Initialise(session);
             ConsumerDispatcher = new ConcurrentConsumerDispatcher(this, workService);
+            Initialise(session);
         }
 
         protected void Initialise(ISession session)
@@ -736,13 +736,13 @@ namespace RabbitMQ.Client.Impl
         {
             var k =
                 (BasicConsumerRpcContinuation)m_continuationQueue.Next();
-
+/*
             Trace.Assert(k.m_consumerTag == consumerTag, string.Format(
                 "Consumer tag mismatch during cancel: {0} != {1}",
                 k.m_consumerTag,
                 consumerTag
                 ));
-
+*/
             lock (m_consumers)
             {
                 k.m_consumer = m_consumers[consumerTag];
@@ -809,7 +809,7 @@ namespace RabbitMQ.Client.Impl
             k.HandleCommand(null); // release the continuation.
         }
 
-        public void HandleBasicGetOk(ulong deliveryTag,
+        public virtual void HandleBasicGetOk(ulong deliveryTag,
             bool redelivered,
             string exchange,
             string routingKey,
